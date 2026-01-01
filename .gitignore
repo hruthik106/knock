@@ -1,0 +1,17 @@
+# Go
+/bin/
+*.exe
+*.dll
+*.so
+*.dylib
+*.test
+
+# Build cache
+/pkg/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
