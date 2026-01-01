@@ -1,7 +1,21 @@
 package main
 
-import "fmt"
+import (
+	"fmt"
+	"os"
+)
 
 func main() {
-	fmt.Println("checking anyone is open")
+	if len(os.Args) != 2 {
+		printUsage()
+		os.Exit(2)
+	}
+
+	url := os.Args[1]
+	fmt.Println("knocking on : ", url)
+
+}
+
+func printUsage() {
+	fmt.Println(os.Stderr, "usage : knock <url>")
 }
