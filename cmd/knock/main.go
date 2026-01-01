@@ -7,35 +7,58 @@ import (
 	"time"
 )
 
+const timeout = 5 * time.Second
+
 func main() {
-	if len(os.Args) != 2 {
+	url, err := parseArgs(os.Args)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
 		printUsage()
 		os.Exit(2)
 	}
 
-	url := os.Args[1]
-	fmt.Println("knocking on : ", url)
+	fmt.Println("knock <", url, ">")
 
-	client := http.Client{
-		Timeout: 5 * time.Second,
-	}
-
-	resp, err := client.Get(url)
+	status, err := knock(url)
 	if err != nil {
-		fmt.Println(os.Stderr, "unreachable url : ", url)
+		fmt.Fprintln(os.Stderr, "✖ unreachable")
 		os.Exit(3)
 	}
-	defer resp.Body.Close()
 
-	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
-		fmt.Println("successfully knocked on : ", url)
-		fmt.Println("responded with : ", resp.Status)
+	if status >= 200 && status < 300 {
+		fmt.Println("✔ alive", fmt.Sprintf("%d", status))
 		os.Exit(0)
 	}
 
-	fmt.Println("X ", resp.Status)
+	fmt.Println("✖ unhealthy", fmt.Sprintf("(%d)", status))
 	os.Exit(1)
 
+}
+
+func parseArgs(args []string) (string, error) {
+	if len(args) != 2 {
+		return "", fmt.Errorf("invalid arguments ")
+	}
+	return args[1], nil
+}
+
+func knock(url string) (int, error) {
+	client := http.Client{
+		Timeout: timeout,
+	}
+	req, err := http.NewRequest(http.MethodHead, url, nil)
+
+	if err != nil {
+		return 0, err
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return 0, err
+	}
+
+	defer resp.Body.Close()
+
+	return resp.StatusCode, nil
 }
 
 func printUsage() {
