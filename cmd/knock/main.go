@@ -2,44 +2,175 @@ package main
 
 import (
 	"bufio"
+	"flag"
 	"fmt"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 )
 
 const timeout = 5 * time.Second
 
+type FilterType int
+
+const (
+	FilterNone FilterType = iota
+	FilterAlive
+	FilterUnhealthy
+	FilterUnreachable
+)
+
+type Config struct {
+	Targets []string
+	Timeout time.Duration
+	Method  string
+	only    FilterType
+}
+
 func main() {
-	targets, err := parseArgs(os.Args)
+	cfg, err := parseConfig()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		printUsage()
 		os.Exit(2)
 	}
-
-	if len(targets) > 1 {
-		fmt.Printf("knocking %d targets \n\n", len(targets))
+	if len(cfg.Targets) > 1 {
+		fmt.Printf("knocking %d targets \n\n", len(cfg.Targets))
 	}
 	exitcode := 0
 
-	for _, url := range targets {
-		status, latency, err := knock(url)
-		if err != nil {
-			fmt.Printf("✖ %s (unreachable)\n", url)
-			exitcode = max(exitcode, 3)
+	for _, url := range cfg.Targets {
+		status, latency, err := knock(url, cfg)
+		result := classify(status, err)
+
+		if !shouldPrint(result, cfg.only) {
+			exitcode = max(exitcode, exitFromResult(result))
 			continue
 		}
-		if status >= 200 && status < 300 {
-			fmt.Printf("✔ %s (%d, %s)\n", url, status, latency)
-			continue
-		}
-		fmt.Printf("✖ %s (%d, %s)\n", url, status, latency)
-		exitcode = max(exitcode, 1)
+		printResult(url, status, latency, result)
+		exitcode = max(exitcode, exitFromResult(result))
 
 	}
 	os.Exit(exitcode)
 
+}
+
+type ResultType int
+
+const (
+	ResultAlive ResultType = iota
+	ResultUnhealthy
+	ResultUnreachable
+)
+
+func classify(status int, err error) ResultType {
+	if err != nil {
+		return ResultUnreachable
+	}
+	if status >= 200 && status < 300 {
+		return ResultAlive
+	}
+	return ResultUnhealthy
+}
+
+func shouldPrint(r ResultType, f FilterType) bool {
+	if f == FilterNone {
+		return true
+	}
+	return int(r) == int(f-1)
+}
+
+func exitFromResult(r ResultType) int {
+	switch r {
+	case ResultAlive:
+		return 0
+	case ResultUnhealthy:
+		return 1
+	default:
+		return 3
+	}
+}
+
+func printResult(url string, status int, latency string, r ResultType) {
+
+	switch r {
+	case ResultAlive:
+		fmt.Printf("✔ %s (%d, %s)\n", url, status, latency)
+	case ResultUnhealthy:
+		fmt.Printf("✖ %s (%d, %s)\n", url, status, latency)
+	case ResultUnreachable:
+		fmt.Printf("✖ %s (unreachable)\n", url)
+
+	}
+}
+
+func parseConfig() (*Config, error) {
+	cfg := &Config{
+		Timeout: 5 * time.Second,
+		Method:  http.MethodHead,
+		only:    FilterNone,
+	}
+
+	fs := flag.NewFlagSet(os.Args[0], flag.ContinueOnError)
+	fs.SetOutput(os.Stderr)
+
+	file := fs.String("f", "", "")
+	fs.StringVar(file, "file", "", "")
+
+	timeout := fs.Duration("t", cfg.Timeout, "")
+	fs.DurationVar(timeout, "timeout", cfg.Timeout, "")
+
+	method := fs.String("method", cfg.Method, "")
+
+	only := fs.String("o", "", "")
+	fs.StringVar(only, "only", "", "")
+
+	if err := fs.Parse(os.Args[1:]); err != nil {
+		return nil, err
+	}
+
+	//validate method
+	m := strings.ToUpper(*method)
+	if m != http.MethodHead && m != http.MethodGet {
+		return nil, fmt.Errorf("invalid method : ", *method)
+	}
+
+	cfg.Method = m
+	cfg.Timeout = *timeout
+
+	//parse filter
+	if *only != "" {
+		switch strings.ToLower(*only) {
+		case "al", "alive":
+			cfg.only = FilterAlive
+		case "uh", "unhealthy":
+			cfg.only = FilterUnhealthy
+		case "ur", "unreachable":
+			cfg.only = FilterUnreachable
+		default:
+			return nil, fmt.Errorf("invalid filter ", *only)
+		}
+	}
+
+	//input source
+	args := fs.Args()
+	if *file != "" && len(args) > 0 {
+		return nil, fmt.Errorf("use either a file or a url , not both")
+	}
+	if *file != "" {
+		targets, err := readTargets(*file)
+		if err != nil {
+			return nil, err
+		}
+		cfg.Targets = targets
+		return cfg, nil
+	}
+	if len(args) != 1 {
+		return nil, fmt.Errorf("invalid arguments ")
+	}
+	cfg.Targets = []string{args[0]}
+	return cfg, nil
 }
 
 func parseArgs(args []string) ([]string, error) {
@@ -84,11 +215,11 @@ func readTargets(path string) ([]string, error) {
 	return urls, scanner.Err()
 }
 
-func knock(url string) (int, string, error) {
+func knock(url string, cfg *Config) (int, string, error) {
 	client := http.Client{
-		Timeout: timeout,
+		Timeout: cfg.Timeout,
 	}
-	req, err := http.NewRequest(http.MethodHead, url, nil)
+	req, err := http.NewRequest(cfg.Method, url, nil)
 
 	if err != nil {
 		return 0, "", err
@@ -114,8 +245,15 @@ func formatLatency(d time.Duration) string {
 
 func printUsage() {
 	fmt.Fprintln(os.Stderr, "usage : ")
-	fmt.Fprintln(os.Stderr, " knock <url>")
-	fmt.Fprintln(os.Stderr, " knock -f <file>")
+	fmt.Fprintln(os.Stderr, " knock <url> [flags]")
+	fmt.Fprintln(os.Stderr, " knock -f <file> [flags]")
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, "flags:")
+	fmt.Fprintln(os.Stderr, "  -f , --file <path>      read targets from file")
+	fmt.Fprintln(os.Stderr, "  -t , --timeout <dur>    request timeout (default 5s)")
+	fmt.Fprintln(os.Stderr, "  --method <HEAD|GEt>     http method (default HEAD)")
+	fmt.Fprintln(os.Stderr, "  -o, --only <filter>     al|uh|ur or alive|unhealthy|unreachable")
+
 }
 
 func max(a, b int) int {
