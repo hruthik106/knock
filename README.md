@@ -17,7 +17,7 @@
 <p><strong>Using Go:</strong></p>
 
 <pre>
-go install github.com/hruthik106/knock/cmd/knock@v0.1.0
+go install github.com/hruthik106/knock/cmd/knock@v0.1.1
 </pre>
 
 <p>
@@ -139,6 +139,6 @@ knock -o ur -f &lt;file&gt;   <!-- show only unreachable targets -->
 <h2>Status</h2>
 
 <p>
-  <strong>knock</strong> is in early development (<code>v0.x</code>).
+  <strong>knock</strong> is in early development (<code>v0.1.1</code>).
   The core behavior is stable, but new features may be added.
 </p>
