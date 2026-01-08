@@ -251,7 +251,7 @@ func printUsage() {
 	fmt.Fprintln(os.Stderr, "flags:")
 	fmt.Fprintln(os.Stderr, "  -f , --file <path>      read targets from file")
 	fmt.Fprintln(os.Stderr, "  -t , --timeout <dur>    request timeout (default 5s)")
-	fmt.Fprintln(os.Stderr, "  --method <HEAD|GEt>     http method (default HEAD)")
+	fmt.Fprintln(os.Stderr, "  --method <HEAD|GET>     http method (default HEAD)")
 	fmt.Fprintln(os.Stderr, "  -o, --only <filter>     al|uh|ur or alive|unhealthy|unreachable")
 
 }
